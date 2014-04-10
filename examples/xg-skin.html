@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<!-- saved from url=(0055)http://alteredqualia.com/xg/examples/deferred_skin.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>xg - skin</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				color:#fff;
+				background:#000;
+				padding:0;
+				margin:0;
+				font-weight: bold;
+				font-family:Monospace;
+				font-size:13px;
+			}
+
+			a {	color: #ffffff;	}
+
+			#info {
+				position: absolute;
+				top: 0px; width: 100%;
+				color: #ffffff;
+				padding: 5px 0px;
+				text-align:center;
+				z-index:1000;
+			}
+
+			#oldie {
+				background:rgb(200,100,0) !important;
+				color:#fff;
+			}
+
+			#loading { background: #0af; color: white; padding: 0.25em 1em; position: absolute; right:0px; top: 0px; z-index: 200; }
+
+			#stats { position: absolute; top: 5px; left: 5px; }
+			#stats #fps { background: transparent !important }
+			#stats #fps #fpsText { color: #aaa !important }
+			#stats #fps #fpsGraph { display: none }
+
+			#selfd { 
+				border: white 1px;
+				position: absolute;
+				top: 5px; right: 5px; width: 96px; height: 72px;
+				z-index:1000;
+			}
+			#selfv {
+				width: 96px; height: 72px;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="selfd">
+		<video id="selfv" autoplay="true" muted="true" width="96" height="72"></video>
+	    </div>
+		<div id="loading" style="display: none;">Loading ...</div>
+
+		<script src="./xg - skin_files/xg.min.head.js"></script>
+		<script src="./xg - skin_files/stats.min.js"></script>
+		
+		<script type="x-shader/x-vertex" id="vertexShaderHemi">
+
+			varying vec3 worldPosition;
+
+			void main() {
+
+				vec4 mPosition = modelMatrix * vec4( position, 1.0 );
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+				gl_Position = projectionMatrix * mvPosition;
+				worldPosition = mPosition.xyz;
+
+			}
+
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentShaderHemi">
+
+			uniform vec3 topColor;
+			uniform vec3 bottomColor;
+			uniform float offset;
+			uniform float exponent;
+			uniform float brightness;
+
+			varying vec3 worldPosition;
+
+			void main() {
+
+				float h = normalize( worldPosition + offset ).y;
+				gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( h, exponent ), 0.0 ) ), 1.0 );
+
+				gl_FragColor.xyz = pow( gl_FragColor.xyz, vec3( 2.2 ) );
+				gl_FragColor.xyz /= brightness;
+
+
+			}
+
+		</script>
+
+		<script>		    		   		  
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+			var BRIGHTNESS = 1.5;
+
+			var MARGIN = 0;
+			var SCALE = 0.7;
+
+			var WIDTH = window.innerWidth;
+			var HEIGHT = window.innerHeight - 2 * MARGIN;
+
+			var statsEnabled = true;
+
+			//
+
+			var useKeyLight = true;
+			var useMultiLight = true;
+			var useHemiLight = true;
+
+			//
+
+			var container, stats, loader;
+
+			var camera, scene, renderer;
+
+			var mesh;
+
+			var directionalLight, hemiLight;
+
+			var mouseX = 0;
+			var mouseY = 0;
+
+			var targetX = 0, targetY = 0, targetZ = 0;
+
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+
+			var cameraTarget = new XG.Vector3( 0, 0, 0 );
+
+			//
+
+			var loadingElement = document.getElementById( "loading" );
+
+			var itemCounter = 0;
+			var itemsToLoad = 0;
+
+			//
+
+
+			init();
+			animate();
+
+			function init() {				
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				//
+
+				scene = new XG.Scene();
+
+				camera = new XG.PerspectiveCamera( 18, WIDTH / HEIGHT, 1, 7000 );
+				camera.position.set( 0, 170, 1200 );
+				camera.lookAt( cameraTarget );
+
+				// LIGHTS
+
+				if ( useKeyLight ) {
+
+					directionalLight = new XG.DirectionalLight( 0xffffff, 0.75 );
+					directionalLight.position.set( 1, 1, 1 );
+					scene.add( directionalLight );
+
+					directionalLight.position.multiplyScalar( 500 );
+
+					directionalLight.castShadow = true;
+
+					directionalLight.shadowMapWidth = 1024;
+					directionalLight.shadowMapHeight = 1024;
+
+					directionalLight.shadowCameraNear = 200;
+					directionalLight.shadowCameraFar = 1500;
+
+					var d = 500;
+					directionalLight.shadowCameraLeft = -d;
+					directionalLight.shadowCameraRight = d;
+					directionalLight.shadowCameraTop = d;
+					directionalLight.shadowCameraBottom = -d;
+
+					directionalLight.shadowDarkness = 1;
+
+				}
+
+				if ( useMultiLight ) {
+
+					directionalLight.position.y = -300;
+
+					directionalLight2 = new XG.DirectionalLight( 0xffffff, 0.5 );
+					directionalLight2.position.set( -1, 1, 1 );
+					directionalLight2.position.multiplyScalar( 500 );
+					scene.add( directionalLight2 );
+
+					directionalLight2.castShadow = true;
+
+					directionalLight2.shadowMapWidth = 1024;
+					directionalLight2.shadowMapHeight = 1024;
+
+					directionalLight2.shadowCameraNear = 200;
+					directionalLight2.shadowCameraFar = 1500;
+
+					var d = 500;
+					directionalLight2.shadowCameraLeft = -d;
+					directionalLight2.shadowCameraRight = d;
+					directionalLight2.shadowCameraTop = d;
+					directionalLight2.shadowCameraBottom = -d;
+
+					directionalLight2.shadowDarkness = 1;
+
+					//
+
+					directionalLight3 = new XG.DirectionalLight( 0xffffff, 0.53 );
+					directionalLight3.position.set( 1, -0.5, -1 );
+					directionalLight3.position.multiplyScalar( 1500 );
+					scene.add( directionalLight3 );
+
+					directionalLight3.castShadow = true;
+
+					directionalLight3.shadowMapWidth = 1024;
+					directionalLight3.shadowMapHeight = 1024;
+
+					directionalLight3.shadowCameraNear = 0.1;
+					directionalLight3.shadowCameraFar = 5500;
+
+					var d = 500;
+					directionalLight3.shadowCameraLeft = -d;
+					directionalLight3.shadowCameraRight = d;
+					directionalLight3.shadowCameraTop = d;
+					directionalLight3.shadowCameraBottom = -d;
+
+					directionalLight3.shadowDarkness = 1;
+
+					//
+
+					directionalLight.color.setHSV( 0.06, 0.1, 0.8 );
+					directionalLight2.color.setHSV( 0, 0.1, 1 );
+
+				}
+
+				if ( useHemiLight ) {
+
+					hemiLight = new XG.HemisphereLight( 0xffffff, 0xffffff, 0.5 );
+					hemiLight.color.setHSV( 0.6, 0.75, 1 );
+					hemiLight.groundColor.setHSV( 0.095, 0.5, 1 );
+					hemiLight.position.set( 0, 1000, 0 );
+					scene.add( hemiLight );
+
+					addSkyHemi();
+
+				}
+
+				// MODEL
+
+				itemsToLoad = 5;
+
+				loader = new XG.CTMLoader();
+				loader.load( "models/ctm/head/head.ctm", function( geometry ) { createScene( geometry, 150 ) } );
+
+				// RENDERER
+
+				var pars = { antialias: true, tonemapping: XG.FilmicOperator, brightness: BRIGHTNESS,
+							 clearColor: 0x040404, clearAlpha: 1, alpha: false,
+							 width: WIDTH, height: HEIGHT, scale: SCALE,
+							 useMultipleRenderTargets: true
+							 };
+
+				renderer = new XG.DeferredRenderer( pars );
+
+				renderer.domElement.style.position = "absolute";
+				renderer.domElement.style.top = MARGIN + "px";
+				renderer.domElement.style.left = "0px";
+
+				renderer.domElement.style.position = "absolute";
+				container.appendChild( renderer.domElement );
+
+				//
+
+				renderer.shadowMapEnabled = true;
+				renderer.shadowMapUseDepthTextures = true;
+				renderer.shadowMapCullFace = XG.CullFaceNone;
+
+				renderer.shadowMapSlopeDepthBias = true;
+				renderer.shadowMapSlopeScale = 2;
+
+				renderer.shadowMapDepthTextureBias = 0.01;
+
+				//renderer.shadowMapDebug = true;
+
+				//
+
+				renderer.ssaoEnabled = true;
+				renderer.bloomEnabled = true;
+
+				renderer.bloomThreshold = 2.0;
+
+				renderer.dofEnabled = true;
+				renderer.dofAutofocus = true;
+				renderer.dofFancy = true;
+				renderer.dofLensFstop = 1.4;
+				renderer.dofLensBlurScale = 4;
+
+				var fovRad = XG.Math.degToRad( camera.fov );
+				renderer.dofLensFocalLength =  XG.Math.fovToFocalLength( fovRad, 24 );
+
+				// POST-EFFECTS
+
+				var effectLens = new XG.ShaderPass( XG.ChromaticAberrationShader );
+				effectLens.material.uniforms.amount.value = 0.003;
+
+				renderer.addEffect( effectLens );
+
+				// STATS
+
+				if ( statsEnabled ) {
+
+					stats = new Stats();
+					container.appendChild( stats.domElement );
+
+				}
+
+				// EVENTS
+
+				//document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+          	function loadCallback () {
+
+				itemCounter += 1;
+
+				if ( itemCounter >= itemsToLoad ) {
+
+					loadingElement.style.display = "none";
+
+				}
+
+			}
+
+			function createScene( geometry, scale ) {
+
+				loadCallback();
+
+				var diffuseMap = XG.ImageUtils.loadTexture( "models/ctm/head/diffuse2k2.jpg", loadCallback );
+				diffuseMap.flipY = false;
+				diffuseMap.anisotropy = 4;
+
+				var bumpMap = XG.ImageUtils.loadTexture( "models/ctm/head/displacement1k.jpg", loadCallback );
+				bumpMap.flipY = false;
+				bumpMap.anisotropy = 4;
+
+				var glossMap = XG.ImageUtils.loadTexture( "models/ctm/head/gloss2k.jpg", loadCallback );
+				glossMap.flipY = false;
+				glossMap.anisotropy = 4;
+
+				var eyeMap = XG.ImageUtils.loadTexture( "models/ctm/head/eye1k_blue.jpg", loadCallback );
+				eyeMap.flipY = false;
+				eyeMap.anisotropy = 4;
+
+				// HEAD
+
+				var skinMaterial = new XG.PhongMaterial( {
+
+					"color"		: 0xfff4ef,
+					"specular"	: 0x2b2b2b,
+					"shininess"	: 0.035,
+					"map"		: diffuseMap,
+					"glossMap"	: glossMap,
+					"bumpMap"	: bumpMap,
+					"bumpScale"	: 10,
+					"wrapAround": true
+
+				} );
+
+				skinMaterial.wrapRGB.set( 0.75, 0.5, 0.5 );
+
+				mesh = new XG.Mesh( geometry, skinMaterial );
+
+				mesh.position.y = 30;
+				mesh.scale.multiplyScalar( scale );
+
+				mesh.castShadow = true;
+				mesh.receiveShadow = true;
+
+				scene.add( mesh );
+
+				// EYES
+
+				var eyeGeo = new XG.SphereGeometry( 0.199, 32, 16 );
+				var corneaGeo = new XG.SphereGeometry( 0.185 * 0.8, 32, 16 );
+
+				var eyeMaterial = new XG.PhongMaterial( {
+
+					"color"		: 0xffffff,
+					"specular"	: 0x2b2b2b,
+					"shininess"	: 0.2,
+					"map"		: eyeMap,
+					"glossMap"	: eyeMap,
+					"bumpMap"	: eyeMap,
+					"bumpScale"	: 0.5,
+					"wrapAround": true
+
+				} );
+
+				var corneaMaterial = new XG.PhongMaterial( {
+
+					"color"			: 0x000000,
+					"specular"		: 0x2b2b2b,
+					"shininess"		: 1024,
+					"opacity"		: 0.925,
+					"transparent" 	: true,
+					"blending"		: XG.AdditiveBlending
+
+				} );
+
+				// LEFT EYE
+
+				var leftGyro = new XG.Gyroscope();
+				//leftGyro.position.set( 0.32, 0.625, 0.765 );
+				leftGyro.position.set( 0.3207, 0.6169, 0.7379 );
+
+				var leftEye = new XG.Mesh( eyeGeo, eyeMaterial );
+				leftEye.rotation.set( 1.65, 0, -0.1 );
+				leftEye.castShadow = true;
+				leftEye.receiveShadow = true;
+
+				var leftCornea = new XG.Mesh( corneaGeo, corneaMaterial );
+				leftCornea.position.set( 0, -0.01, 0 );
+				leftCornea.scale.set( 1, 1.45, 1 );
+				leftCornea.castShadow = false;
+				leftCornea.receiveShadow = true;
+
+				leftEye.add( leftCornea );
+				leftGyro.add( leftEye );
+				mesh.add( leftGyro );
+
+				// RIGHT EYE
+
+				var rightGyro = new XG.Gyroscope();
+				//rightGyro.position.set( -0.44, 0.62, 0.79 );
+				rightGyro.position.set( -0.4355, 0.6131, 0.7733 );
+
+				var rightEye = new XG.Mesh( eyeGeo, eyeMaterial );
+				rightEye.rotation.set( 1.65, 0, 0.05 );
+				rightEye.castShadow = true;
+				rightEye.receiveShadow = true;
+
+				var rightCornea = new XG.Mesh( corneaGeo, corneaMaterial );
+				rightCornea.position.set( 0, -0.01, 0 );
+				rightCornea.scale.set( 1, 1.45, 1 );
+				rightCornea.castShadow = false;
+				rightCornea.receiveShadow = true;
+
+				rightEye.add( rightCornea );
+				rightGyro.add( rightEye );
+				mesh.add( rightGyro );
+
+			}
+
+			function addSkyHemi() {
+
+				var vertexShader = document.getElementById( 'vertexShaderHemi' ).textContent;
+				var fragmentShader = document.getElementById( 'fragmentShaderHemi' ).textContent;
+
+				var uniforms = {
+
+					topColor: 	 { type: "c", value: new XG.Color( 0x0077ff ) },
+					bottomColor: { type: "c", value: new XG.Color( 0xffffff ) },
+					offset:		 { type: "f", value: 2500 },
+					exponent:	 { type: "f", value: 0.6 },
+					brightness:	 { type: "f", value: BRIGHTNESS }
+
+				}
+
+				if ( useHemiLight ) {
+
+					uniforms.topColor.value.copy( hemiLight.color );
+					uniforms.bottomColor.value.copy( hemiLight.groundColor );
+
+					uniforms.topColor.value.adjustHSV( 0, -0.5, -0.5 );
+					uniforms.bottomColor.value.adjustHSV( 0, -0.125, -0.2 );
+
+				}
+
+				var skyMat = new XG.ShaderMaterial( {
+
+					vertexShader	: vertexShader,
+					fragmentShader	: fragmentShader,
+					uniforms		: uniforms,
+					side			: XG.BackSide,
+					transparent		: true
+
+				} );
+
+				var skyGeo = new XG.SphereGeometry( 5000, 32, 15 );
+
+				var sky = new XG.Mesh( skyGeo, skyMat );
+				sky.position.y = 120;
+				sky.renderDepth = 1;
+				scene.add( sky );
+
+			}
+
+			//
+
+			function onWindowResize( event ) {
+
+				WIDTH = window.innerWidth;
+				HEIGHT = window.innerHeight - 2 * MARGIN;
+
+				renderer.setSize( WIDTH, HEIGHT );
+
+				camera.aspect = WIDTH / HEIGHT;
+				camera.updateProjectionMatrix();
+
+
+			}
+
+			function setRotation(yaw, pitch, roll) {
+				//mouseX = x;
+				//mouseY = y;
+				//mouseX = ( windowHalfX - x) * 10;
+				//mouseY = ( y - windowHalfY ) * 8;
+				targetX = yaw;//mouseX * .001;
+				targetY = pitch;//mouseY * .001;
+				targetZ = roll;
+				//console.log("y:" + yaw + ",p:" + pitch + ",r:" + roll)
+			}
+
+			//
+
+			function animate() { 
+				requestAnimationFrame( animate );
+
+				render();
+				if ( statsEnabled ) stats.update();
+
+			}
+
+			function render() {
+				if ( mesh ) {
+
+					mesh.rotation.y += 0.5 * ( targetX - mesh.rotation.y );
+					mesh.rotation.x += 0.5 * ( targetY - mesh.rotation.x ); //.05
+					mesh.rotation.z += 0.5 * ( targetZ - mesh.rotation.z ); //.05
+					//console.log(mesh.rotation);
+
+				}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+</body></html>

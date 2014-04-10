@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>Face transmission over data channels</title>
+		<meta charset="utf-8">
+		<style>		
+		    #xgFrame {
+		    	border: 0px;
+		    }	
+
+			#remoteCanvas {
+				-o-transform : scaleX(-1);
+				-webkit-transform : scaleX(-1);
+				transform : scaleX(-1);
+				-ms-filter : fliph; /*IE*/
+				filter : fliph; /*IE*/
+				background: black;				
+			}
+
+			#localCanvas {
+				position: absolute;
+				top: 0px;
+				left: 0px;
+				-o-transform : scaleX(-1);
+				-webkit-transform : scaleX(-1);
+				transform : scaleX(-1);
+				-ms-filter : fliph; /*IE*/
+				filter : fliph; /*IE*/
+				xbackground: black;				
+			}
+
+			#videoel {
+				background: black;
+				-o-transform : scaleX(-1);
+				-webkit-transform : scaleX(-1);
+				transform : scaleX(-1);
+				-ms-filter : fliph; /*IE*/
+				filter : fliph; /*IE*/
+			}
+
+			#container {
+				position : relative;
+				width : 1024px;
+				/*margin : 0px auto;*/
+			}
+			
+			#content {
+				margin-top : 32px;
+				margin-left : 32px;
+				margin-right : 32px;
+				max-width: 1024px;
+			}
+			 
+		</style>
+	</head>
+	<body>
+		<script src="./ext_js/dat.gui.min.js"></script>
+		<script src="./ext_js/utils.js"></script>
+		<script src="./ext_js/jsfeat-min.js"></script>
+		<script src="./ext_js/frontalface.js"></script>
+		<script src="./ext_js/jsfeat_detect.js"></script>
+		<script src="./ext_js/numeric-1.2.6.min.js"></script>
+		<script src="./ext_js/mosse.js"></script>
+		<script src="./ext_js/left_eye_filter.js"></script>
+		<script src="./ext_js/right_eye_filter.js"></script>
+		<script src="./ext_js/nose_filter.js"></script>
+		<script src="../models/model_pca_20_svm.js"></script>
+		<script src="../js/clm.js"></script>
+		<script src="./ext_js/ccv.js"></script>
+		<script src="./ext_js/cascade.js"></script>
+		<script src="../js/svmfilter_fft.js"></script>
+		<script src="../js/mossefilter.js"></script>
+		<script src="./ext_js/Stats.js"></script>
+		<div id="content">
+			<h2>Face via data channels</h2>
+			<div id="container">
+				<video id="videoel" width="320" height="240" autoplay="true">
+				</video>
+				<canvas id="localCanvas" width="320" height="240"></canvas>
+				<canvas id="remoteCanvas" width="320" height="240"></canvas>
+				<iframe id="xgFrame" width="320" height="240" src="xg-skin.html"></iframe>
+			</div>
+			<br/>
+			<input class="btn" type="button" value="Start" onclick="startVideo()" id="startbutton"></input>
+			<script>
+				var vid = document.getElementById('videoel');
+				var lcvs = document.getElementById('localCanvas');
+				var lcx = lcvs.getContext('2d');
+				var rcvs = document.getElementById('remoteCanvas');
+				var rcx = rcvs.getContext('2d');
+				vid.addEventListener('canplay', startTracking, false);
+
+				var ctrack = new clm.tracker();
+				ctrack.init(pModel);
+				
+                var dcParams = { ordered: false, maxRetransmits: 0 };
+                var offerParams = { mandatory: { OfferToReceiveAudio: false,
+                                    OfferToReceiveVideo: false } };
+				var lpc = new webkitRTCPeerConnection(null);
+				var rpc = new webkitRTCPeerConnection(null);
+				var ldc = lpc.createDataChannel("data", dcParams);
+				var rdc;
+				lpc.onicecandidate = onLocalIceCandidate;
+				rpc.onicecandidate = onRemoteIceCandidate;
+				rpc.ondatachannel = onRemoteDataChannel;
+				lpc.createOffer(onCreateOfferSuccess, fail, offerParams);
+				
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				document.getElementById('container').appendChild( stats.domElement );
+				
+				navigator.getUserMedia = navigator.getUserMedia || 
+				    navigator.webkitGetUserMedia || 
+				    navigator.mozGetUserMedia || 
+				    navigator.msGetUserMedia;
+				window.URL = window.URL || window.webkitURL || 
+				    window.msURL || window.mozURL;
+
+                function noop() {}
+                function fail(e) { console.log("Error: " + e); }
+
+				function onCreateOfferSuccess(desc) {
+				  lpc.setLocalDescription(desc, noop, fail);
+				  rpc.setRemoteDescription(desc, noop, fail);
+				  rpc.createAnswer(onCreateAnswerSuccess, fail);
+				}
+
+				function onCreateAnswerSuccess(desc) {
+				  rpc.setLocalDescription(desc, noop, fail);
+				  lpc.setRemoteDescription(desc, noop, fail);
+				}
+
+				function onLocalIceCandidate(event) {				 
+				  if (event.candidate) {
+				    rpc.addIceCandidate(event.candidate, noop, fail);
+				  }
+				}
+
+				function onRemoteIceCandidate(event) {
+				  if (event.candidate) {
+				    lpc.addIceCandidate(event.candidate, noop, fail);
+				  }
+				}
+
+				function onRemoteDataChannel(event) {
+				  rdc = event.channel;
+				  rdc.onmessage = onMessage;
+				}
+		
+				function startVideo() {
+					var videoSelector = {video : true};
+					navigator.getUserMedia(videoSelector, onStreamAcquired, fail);
+				}
+
+				function onStreamAcquired(stream) {
+					if (vid.mozCaptureStream) {
+						vid.mozSrcObject = stream;
+					} else {
+						vid.src = (window.URL && window.URL.createObjectURL(stream)) || stream;
+					}					
+				}
+
+				function startTracking() {
+					// start tracking
+					ctrack.start(vid);
+					// start drawing face grid
+					drawGridLoop();
+				}
+
+				var xx= 0;
+				function drawGridLoop() {
+					lcx.clearRect(0, 0, 500, 375);
+
+					// draw score
+					var score = ctrack.getScore().toFixed(3);
+					var convergence = ctrack.getConvergence().toFixed(3);
+					lcx.strokeStyle = "white";
+					lcx.moveTo(lcvs.width - 1, lcvs.height - 2);
+					lcx.lineTo((lcvs.width - 1) * (1 - score), lcvs.height - 2);
+					lcx.stroke();
+
+					// get position of face
+					var positions = ctrack.getCurrentPosition(vid);
+					if (positions) {
+						// draw current grid
+						ctrack.draw(lcvs);
+
+						var center = positions[62];
+						var top = positions[33];	
+						lcx.strokeStyle = "white";
+						lcx.moveTo(center[0], center[1]);
+						lcx.lineTo(top[0], top[1]);
+						lcx.stroke();
+
+				        // send params (check convergence?)
+				        if (xx++ % 30 == 0) {
+				        	console.log("c:"+center+" t:"+top);
+				        }
+						if (ldc.readyState == 'open') {
+							var msg = { 
+								score: score,
+								params: ctrack.getCurrentParameters(),
+								center: center,
+								top: top
+							};
+							ldc.send(JSON.stringify(msg));
+						}
+					}
+					requestAnimFrame(drawGridLoop);
+				}
+
+				function onMessage(event) {
+					var msg = JSON.parse(event.data);
+					rcx.clearRect(0, 0, 500, 375);
+					ctrack.draw(rcvs, msg.params);
+					var cvsctr = [xgFrame.width / 2, xgFrame.height / 2];
+					var yaw = (cvsctr[0] - msg.center[0]) * .01;
+					var pitch = -(cvsctr[1] - msg.center[1]) * .01;
+					var roll = (msg.top[0] - msg.center[0]) * .02;
+					xgFrame.contentWindow.setRotation(yaw, pitch, roll);
+				}
+					
+				document.addEventListener("clmtrackrIteration", function(event) {
+					stats.update();
+				}, false);
+					
+			</script>
+		</div>
+	</body>
+</html>
